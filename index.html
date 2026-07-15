@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PIMA E-Catalogue | B2B Portal</title>
+    
+    <!-- Tải Font Chữ -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Tải Thư Viện Cốt Lõi -->
+    <script defer src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';</script>
+
+    <style>
+        :root {
+            --primary: #1e293b;
+            --accent: #c5a880; /* Màu vàng Gold PIMA */
+            --bg: #f1f5f9;
+            --toolbar-bg: rgba(15, 23, 42, 0.95);
+        }
+
+        body, html {
+            margin: 0; padding: 0; height: 100%; width: 100%;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            overflow: hidden;
+            touch-action: none; /* Vô hiệu hóa pull-to-refresh trên mobile */
+        }
+
+        #loader {
+            position: fixed; inset: 0;
+            background: var(--bg);
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 4px solid #cbd5e1; border-top: 4px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        #progress-text { font-weight: 500; color: var(--primary); font-size: 1.1rem; }
+        
+        #error-ui { display: none; text-align: center; max-width: 500px; padding: 30px; background: white; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); }
+        #error-ui h2 { color: #ef4444; margin-bottom: 10px; font-size: 1.5rem; }
+        #error-ui p { color: #64748b; margin-bottom: 25px; line-height: 1.6; }
+        .btn-upload {
+            padding: 14px 28px; background: var(--primary); color: white;
+            border-radius: 8px; border: none; font-size: 1rem; font-weight: 600;
+            cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.2s, background 0.2s;
+        }
+        .btn-upload:hover { background: #0f172a; transform: translateY(-2px); }
+
+        #app-container {
+            width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.5s ease;
+            overflow: auto;
+        }
+        #zoom-wrapper {
+            width: 100%; height: 100%;
+            display: flex; justify-content: center; align-items: center;
+            transition: transform 0.3s ease;
+            transform-origin: center top;
+        }
+        .flip-book {
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4);
+            background: white;
+        }
+        .page {
+            background: white; border: 1px solid #e2e8f0; overflow: hidden;
+        }
+        .page img {
+            width: 100%; height: 100%; object-fit: contain; pointer-events: none;
+        }
+
+        .toolbar {
+            position: fixed; bottom: 25px; left: 50%; transform: translateX(-50%);
+            background: var(--toolbar-bg); backdrop-filter: blur(10px);
+            padding: 10px 20px; border-radius: 50px;
+            display: flex; gap: 10px; align-items: center;
+            z-index: 1000; box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+        .tool-btn {
+            background: none; border: none; color: white;
+            width: 40px; height: 40px; border-radius: 50%;
+            cursor: pointer; display: flex; justify-content: center; align-items: center;
+            font-size: 16px; transition: background 0.2s, color 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .tool-btn:hover { background: rgba(255,255,255,0.1); color: var(--accent); }
+        .tool-btn.active { color: var(--accent); background: rgba(197, 168, 128, 0.2); }
+        .page-counter { color: #94a3b8; font-size: 0.95rem; padding: 0 15px; font-weight: 500; }
+        .divider { width: 1px; height: 24px; background: #334155; margin: 0 5px; }
+
+        #thumb-tray {
+            position: fixed; bottom: 90px; left: 0; width: 100%;
+            background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px);
+            padding: 15px 0; overflow-x: auto; white-space: nowrap;
+            display: flex; gap: 15px; padding-left: 50vw;
+            transform: translateY(150%); transition: transform 0.3s ease;
+            z-index: 999; scroll-behavior: smooth;
+        }
+        #thumb-tray.active { transform: translateY(0); }
+        .thumb-item {
+            height: 120px; flex-shrink: 0; border: 2px solid transparent; border-radius: 4px;
+            cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .thumb-item:hover, .thumb-item.active { border-color: var(--accent); transform: scale(1.05); }
+
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        @media (max-width: 768px) {
+            .toolbar { bottom: 15px; padding: 8px 15px; gap: 5px; }
+            .tool-btn { width: 36px; height: 36px; font-size: 14px; }
+            .page-counter { padding: 0 10px; font-size: 0.85rem; }
+            #thumb-tray { bottom: 75px; }
+            .thumb-item { height: 90px; }
+            .desktop-only { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loader">
+        <div id="loading-ui">
+            <div class="spinner"></div>
+            <p id="progress-text">Đang kết nối thư viện PIMA...</p>
+        </div>
+        <div id="error-ui">
+            <h2 id="error-title">Lỗi kết nối Server</h2>
+            <p id="error-desc">Trình duyệt đã chặn kết nối mạng (CORS/Proxy).<br>Vui lòng chọn thủ công file PDF Catalogue để xem Offline.</p>
+            <button class="btn-upload" onclick="document.getElementById('fileInput').click()">Mở File PDF PIMA</button>
+            <input type="file" id="fileInput" style="display:none" accept="application/pdf">
+        </div>
+    </div>
+    
+    <div id="app-container">
+        <div id="zoom-wrapper">
+            <div class="flip-book" id="book"></div>
+        </div>
+    </div>
+
+    <div id="thumb-tray"></div>
+
+    <div class="toolbar" id="toolbar">
+        <button class="tool-btn desktop-only" id="btnHome" title="Trang đầu">|◁</button>
+        <button class="tool-btn" id="btnPrev" title="Trang trước">◀</button>
+        <span class="page-counter" id="pageCounter">1 / -</span>
+        <button class="tool-btn" id="btnNext" title="Trang sau">▶</button>
+        <button class="tool-btn desktop-only" id="btnEnd" title="Trang cuối">▷|</button>
+        
+        <div class="divider"></div>
+        
+        <button class="tool-btn" id="btnThumb" title="Hình thu nhỏ">罒</button>
+        <button class="tool-btn" id="btnZoom" title="Phóng to">🔍</button>
+        <button class="tool-btn desktop-only" id="btnFS" title="Toàn màn hình">⛶</button>
+    </div>
+
+    <script>
+        // ============================================================
+        // CẤU HÌNH NGUỒN PDF
+        // ============================================================
+        // ID file trên Google Drive (lấy từ link chia sẻ)
+        const GOOGLE_DRIVE_ID = '1CcYmV7TYAIZh_79elWFi68EyB1ECtOdW';
+
+        // API KEY của Google Cloud (Drive API v3) - XEM HƯỚNG DẪN LẤY KEY Ở PHẦN CHAT
+        // Để trống '' nếu chưa có key, hệ thống sẽ tự động dùng phương án dự phòng (proxy)
+        const GOOGLE_API_KEY = 'AIzaSyCMC51Z3_u6aFzgSlhSkPyfGTgxB_hqyyU'; // <-- Dán API key của bạn vào đây
+
+        // Nguồn ưu tiên #1: Gọi thẳng Google Drive API (chuẩn CORS, ổn định nhất, KHÔNG cần proxy)
+        const DRIVE_API_URL = GOOGLE_API_KEY
+            ? `https://www.googleapis.com/drive/v3/files/${GOOGLE_DRIVE_ID}?alt=media&key=${GOOGLE_API_KEY}`
+            : null;
+
+        // Nguồn dự phòng #2: link tải trực tiếp (cần proxy vì Drive không bật CORS ở link này)
+        const DIRECT_DRIVE_LINK = `https://drive.google.com/uc?export=download&id=${GOOGLE_DRIVE_ID}`;
+
+        const PROXIES = [
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(DIRECT_DRIVE_LINK)}`,
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(DIRECT_DRIVE_LINK)}`,
+            `https://corsproxy.io/?${encodeURIComponent(DIRECT_DRIVE_LINK)}`
+        ];
+        
+        let pageFlip = null;
+        let pdfDoc = null;
+        let totalPages = 0;
+        let currentZoom = 1;
+        const objectUrls = []; // Lưu trữ để dọn dẹp RAM
+        
+        const DOM = {
+            loader: document.getElementById('loader'),
+            loadingUI: document.getElementById('loading-ui'),
+            errorUI: document.getElementById('error-ui'),
+            progressText: document.getElementById('progress-text'),
+            appContainer: document.getElementById('app-container'),
+            zoomWrapper: document.getElementById('zoom-wrapper'),
+            book: document.getElementById('book'),
+            thumbTray: document.getElementById('thumb-tray'),
+            pageCounter: document.getElementById('pageCounter')
+        };
+
+        document.addEventListener("DOMContentLoaded", fetchAndValidatePDF);
+
+        // Thử tải bằng 1 nguồn cụ thể, có timeout để tránh treo quá lâu ở 1 nguồn xấu
+        async function tryFetchSource(url, label, timeoutMs = 12000) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                DOM.progressText.innerText = `Đang thử nguồn: ${label}...`;
+                const response = await fetch(url, { signal: controller.signal });
+                clearTimeout(timer);
+                if (!response.ok) return null;
+
+                const contentType = response.headers.get("content-type") || "";
+                // Tránh trường hợp Google trả về trang HTML cảnh báo virus-scan thay vì file PDF thật
+                if (contentType.includes("text/html")) return null;
+
+                const arrayBuffer = await response.arrayBuffer();
+                const bytes = new Uint8Array(arrayBuffer);
+
+                // Kiểm tra Magic Bytes chống sập PDF.js (%PDF)
+                const isPDF = bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+                if (!isPDF) return null;
+
+                return bytes;
+            } catch (e) {
+                clearTimeout(timer);
+                return null; // Nuốt lỗi, để hàm gọi chuyển sang nguồn kế tiếp
+            }
+        }
+
+        async function fetchAndValidatePDF() {
+            DOM.progressText.innerText = "Đang kết nối kho dữ liệu PIMA...";
+
+            // Danh sách các nguồn sẽ thử, theo thứ tự ưu tiên độ tin cậy giảm dần:
+            // 1) Google Drive API chính chủ (nếu có API key) - ổn định nhất, có CORS chuẩn
+            // 2) Các proxy công khai (dự phòng, có thể không ổn định)
+            const sources = [];
+            if (DRIVE_API_URL) {
+                sources.push({ url: DRIVE_API_URL, label: "Google Drive API" });
+            }
+            PROXIES.forEach((p, i) => sources.push({ url: p, label: `Proxy dự phòng ${i + 1}` }));
+
+            let bytes = null;
+            for (const source of sources) {
+                bytes = await tryFetchSource(source.url, source.label);
+                if (bytes) break;
+            }
+
+            // XỬ LÝ GRACEFUL FAIL: Thay vì ném lỗi, ta nhẹ nhàng chuyển UI sang nút Upload
+            if (!bytes) {
+                showError(
+                    "Không thể tải PDF tự động",
+                    "Không có nguồn dữ liệu nào phản hồi thành công (đã thử " + sources.length + " nguồn).<br>Vui lòng nhấn chọn file PDF từ máy tính của bạn."
+                );
+                return;
+            }
+
+            try {
+                DOM.progressText.innerText = "Đang dựng mô hình 3D...";
+                await processPDF(bytes);
+            } catch (error) {
+                showError("Lỗi khởi tạo", "Quá trình đọc file gặp sự cố. Bạn vui lòng tải file lên thủ công.");
+            }
+        }
+
+        function showError(title, desc) {
+            DOM.loadingUI.style.display = 'none';
+            DOM.errorUI.style.display = 'block';
+            document.getElementById('error-title').innerText = title;
+            document.getElementById('error-desc').innerHTML = desc;
+        }
+
+        async function processPDF(data) {
+            pdfDoc = await pdfjsLib.getDocument({ data: data }).promise;
+            totalPages = pdfDoc.numPages;
+            
+            const page1 = await pdfDoc.getPage(1);
+            const viewport1 = page1.getViewport({ scale: 1.5 });
+            const baseWidth = viewport1.width;
+            const baseHeight = viewport1.height;
+            page1.cleanup();
+
+            for (let i = 1; i <= totalPages; i++) {
+                DOM.progressText.innerText = `Đang tối ưu ảnh: Trang ${i}/${totalPages}`;
+                const page = await pdfDoc.getPage(i);
+                
+                // 1. Tạo Ảnh Sách
+                const viewport = page.getViewport({ scale: 2.0 });
+                const canvas = document.createElement('canvas');
+                canvas.width = viewport.width; canvas.height = viewport.height;
+                await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+                
+                const mainBlob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+                const mainUrl = URL.createObjectURL(mainBlob);
+                objectUrls.push(mainUrl);
+
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'page';
+                const img = new Image();
+                img.src = mainUrl;
+                // Kỹ thuật dọn dẹp RAM tối đa: Xóa URL sau khi ảnh đã load xong
+                img.onload = () => URL.revokeObjectURL(mainUrl); 
+                pageDiv.appendChild(img);
+                DOM.book.appendChild(pageDiv);
+
+                // 2. Tạo Ảnh Thumbnail
+                const thumbViewport = page.getViewport({ scale: 0.2 });
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = thumbViewport.width; thumbCanvas.height = thumbViewport.height;
+                await page.render({ canvasContext: thumbCanvas.getContext('2d'), viewport: thumbViewport }).promise;
+                
+                const thumbBlob = await new Promise(r => thumbCanvas.toBlob(r, 'image/jpeg', 0.5));
+                const thumbUrl = URL.createObjectURL(thumbBlob);
+                objectUrls.push(thumbUrl);
+
+                const thumbImg = new Image();
+                thumbImg.src = thumbUrl;
+                thumbImg.className = 'thumb-item';
+                thumbImg.onload = () => URL.revokeObjectURL(thumbUrl);
+                
+                thumbImg.addEventListener('click', () => {
+                    if (pageFlip) pageFlip.flip(i - 1);
+                    DOM.thumbTray.classList.remove('active');
+                    document.getElementById('btnThumb').classList.remove('active');
+                });
+                DOM.thumbTray.appendChild(thumbImg);
+
+                // DỌN RAM
+                page.cleanup();
+                canvas.width = 0; canvas.height = 0;
+                thumbCanvas.width = 0; thumbCanvas.height = 0;
+            }
+
+            await pdfDoc.destroy();
+            initPageFlip(baseWidth, baseHeight);
+        }
+
+        function initPageFlip(w, h) {
+            pageFlip = new St.PageFlip(DOM.book, {
+                width: w,
+                height: h,
+                size: "stretch",
+                minWidth: 315, maxWidth: 1200,
+                minHeight: 420, maxHeight: 1600,
+                showCover: true,
+                usePortrait: true, // Trên mobile chỉ hiện 1 trang
+                mobileScrollSupport: false,
+                maxShadowOpacity: 0.5
+            });
+
+            pageFlip.loadFromHTML(document.querySelectorAll('.page'));
+
+            pageFlip.on('flip', (e) => {
+                const currentPage = e.data + 1;
+                DOM.pageCounter.innerText = `${currentPage} / ${totalPages}`;
+                updateThumbnailActiveState(e.data);
+            });
+
+            DOM.loader.style.opacity = 0;
+            setTimeout(() => {
+                DOM.loader.style.display = 'none';
+                DOM.appContainer.style.opacity = 1;
+            }, 500);
+
+            DOM.pageCounter.innerText = `1 / ${totalPages}`;
+            setupInteractions();
+        }
+
+        function updateThumbnailActiveState(activeIndex) {
+            document.querySelectorAll('.thumb-item').forEach((th, idx) => {
+                th.classList.toggle('active', idx === activeIndex);
+                if (idx === activeIndex) {
+                    th.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                }
+            });
+        }
+
+        function setupInteractions() {
+            document.getElementById('btnPrev').addEventListener('click', () => pageFlip.flipPrev());
+            document.getElementById('btnNext').addEventListener('click', () => pageFlip.flipNext());
+            
+            const btnHome = document.getElementById('btnHome');
+            if(btnHome) btnHome.addEventListener('click', () => pageFlip.flip(0));
+            
+            const btnEnd = document.getElementById('btnEnd');
+            if(btnEnd) btnEnd.addEventListener('click', () => pageFlip.flip(totalPages - 1));
+
+            const btnThumb = document.getElementById('btnThumb');
+            btnThumb.addEventListener('click', () => {
+                DOM.thumbTray.classList.toggle('active');
+                btnThumb.classList.toggle('active');
+            });
+
+            const btnFS = document.getElementById('btnFS');
+            if(btnFS) {
+                btnFS.addEventListener('click', () => {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(err => console.log(err));
+                    } else {
+                        document.exitFullscreen();
+                    }
+                });
+                document.addEventListener('fullscreenchange', () => {
+                    btnFS.classList.toggle('active', !!document.fullscreenElement);
+                });
+            }
+
+            // Keyboard Navigation
+            document.addEventListener('keydown', (e) => {
+                if (e.key === "ArrowRight") pageFlip.flipNext();
+                if (e.key === "ArrowLeft") pageFlip.flipPrev();
+            });
+
+            // Wheel Pagination
+            DOM.appContainer.addEventListener('wheel', (e) => {
+                if (currentZoom > 1) return;
+                e.preventDefault(); // Ngăn trình duyệt cuộn dọc
+                
+                if (DOM.appContainer.dataset.isFlipping) return;
+                DOM.appContainer.dataset.isFlipping = true;
+                
+                if (e.deltaY > 0) pageFlip.flipNext();
+                else pageFlip.flipPrev();
+                
+                setTimeout(() => DOM.appContainer.dataset.isFlipping = "", 800);
+            }, { passive: false });
+
+            // Smooth Zoom
+            const btnZoom = document.getElementById('btnZoom');
+            const toggleZoom = (e) => {
+                if (currentZoom === 1) {
+                    currentZoom = 2.2;
+                    btnZoom.classList.add('active');
+                    if (e && e.clientX) {
+                        const rect = DOM.book.getBoundingClientRect();
+                        const x = ((e.clientX - rect.left) / rect.width) * 100;
+                        const y = ((e.clientY - rect.top) / rect.height) * 100;
+                        DOM.zoomWrapper.style.transformOrigin = `${x}% ${y}%`;
+                    } else {
+                        DOM.zoomWrapper.style.transformOrigin = 'center center';
+                    }
+                } else {
+                    currentZoom = 1;
+                    btnZoom.classList.remove('active');
+                    DOM.zoomWrapper.style.transformOrigin = 'center center';
+                }
+                DOM.zoomWrapper.style.transform = `scale(${currentZoom})`;
+            };
+            
+            btnZoom.addEventListener('click', toggleZoom);
+            DOM.book.addEventListener('dblclick', toggleZoom);
+        }
+
+        // Sự kiện người dùng tự chọn file PDF
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            if (!e.target.files.length) return;
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            
+            DOM.errorUI.style.display = 'none';
+            DOM.loadingUI.style.display = 'flex';
+            DOM.progressText.innerText = "Đang đọc file PDF nội bộ...";
+            
+            reader.onload = async () => {
+                const bytes = new Uint8Array(reader.result);
+                try {
+                    await processPDF(bytes);
+                } catch (err) {
+                    showError("Lỗi cấu trúc", "File bạn tải lên không hợp lệ.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        window.addEventListener("beforeunload", () => {
+            objectUrls.forEach(URL.revokeObjectURL);
+        });
+
+    </script>
+</body>
+</html>
